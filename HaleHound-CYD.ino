@@ -207,14 +207,15 @@ const unsigned char *nrf_submenu_icons[nrf_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_go_back
 };
 
-// SubGHz Submenu - 5 items
-const int subghz_NUM_SUBMENU_ITEMS = 6;
+// SubGHz Submenu - 7 items
+const int subghz_NUM_SUBMENU_ITEMS = 7;
 const char *subghz_submenu_items[subghz_NUM_SUBMENU_ITEMS] = {
     "Replay Attack",
     "Brute Force",
     "SubGHz Jammer",
     "Spectrum Analyzer",
     "Saved Profile",
+    "Tesla Charge",
     "Back to Main Menu"
 };
 
@@ -224,6 +225,7 @@ const unsigned char *subghz_submenu_icons[subghz_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_no_signal,
     bitmap_icon_analyzer,
     bitmap_icon_list,
+    bitmap_icon_flash,
     bitmap_icon_go_back
 };
 
@@ -1282,7 +1284,7 @@ void handleSubGHzSubmenuTouch() {
             displaySubmenu();
             delay(200);
 
-            if (current_submenu_index == 5) { // Back
+            if (current_submenu_index == 6) { // Back
                 returnToMainMenu();
                 return;
             }
@@ -1351,12 +1353,23 @@ void handleSubGHzSubmenuTouch() {
                     SubAnalyzer::cleanup();
                     break;
                 case 4: // Saved Profile
-                    SavedProfile::saveSetup();
+                    ReplayAttack::showProfileMenu();
+                    break;
+                case 5: // Tesla Charge Port
+                    if (!isOffensiveAllowed()) {
+                        if (blue_team_mode) { showBlueTeamBlockedScreen(); if (!showDisclaimerScreen()) break; }
+                        else if (!showDisclaimerScreen()) break;
+                        if (!isOffensiveAllowed()) break;
+                    }
+                    TeslaCharge::setup();
                     while (!feature_exit_requested) {
-                        SavedProfile::saveLoop();
+                        TeslaCharge::loop();
+                        if (TeslaCharge::isExitRequested()) feature_exit_requested = true;
+                        if (IS_BOOT_PRESSED()) feature_exit_requested = true;
                         touchButtonsUpdate();
                         if (isBackButtonTapped()) feature_exit_requested = true;
                     }
+                    TeslaCharge::cleanup();
                     break;
             }
 

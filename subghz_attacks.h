@@ -47,13 +47,21 @@
 
 namespace ReplayAttack {
 
-// Profile structure for saved signals
+// Max raw RMT items per saved profile (200 items × 4 bytes = 800 bytes)
+// Typical fixed-code remote: 50-120 items per capture
+#define MAX_RAW_ITEMS_PROFILE 200
+
+// Profile structure for saved signals (protocol-decoded OR raw capture)
 struct SignalProfile {
     uint32_t frequency;      // Frequency in Hz
-    unsigned long value;     // Captured code value
-    int bitLength;           // Number of bits
-    int protocol;            // RCSwitch protocol (1-12)
+    unsigned long value;     // Captured code value (0 for raw)
+    int bitLength;           // Number of bits (item count for raw)
+    int protocol;            // RCSwitch protocol 1-12 (0 for raw)
     char name[16];           // Custom name
+    uint8_t isRaw;           // 1 = raw capture, 0 = protocol-decoded
+    uint8_t padding;         // Alignment
+    uint16_t rawItemCount;   // Number of raw RMT items stored
+    rmt_item32_t rawItems[MAX_RAW_ITEMS_PROFILE];  // Raw pulse timing data
 };
 
 // Maximum profiles that can be saved
@@ -175,6 +183,9 @@ int getProfileCount();
 
 // Get profile at index
 SignalProfile* getProfile(int index);
+
+// Show fullscreen profile manager UI (also called from SubGHz submenu)
+void showProfileMenu();
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RMT DRIVER (for hardware-timed OOK transmission)
@@ -370,6 +381,29 @@ bool isExitRequested();
 void cleanup();
 
 }  // namespace SubAnalyzer
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TESLA CHARGE PORT OPENER
+// Known static OOK signal — opens charge port on ALL Tesla models
+// 315 MHz (US) / 433.92 MHz (EU) / Both
+// Source: TeslaTaunter (github.com/keldnorman/TeslaTaunter)
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace TeslaCharge {
+
+// Initialize Tesla module
+void setup();
+
+// Main loop function
+void loop();
+
+// Check if user requested exit
+bool isExitRequested();
+
+// Cleanup
+void cleanup();
+
+}  // namespace TeslaCharge
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SUBGHZ UTILITIES

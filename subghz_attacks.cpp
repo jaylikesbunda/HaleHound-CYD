@@ -163,7 +163,10 @@ static void resumeRmtRx() {
         rmt_driver_uninstall(RMT_CHANNEL_0);
         rmtInitialized = false;
     }
-    // Restart RMT RX for hardware signal capture
+    // Uninstall RX RMT — must uninstall before re-init or driver_install fails
+    if (rmtRxInitialized) {
+        rmt_driver_uninstall(RMT_RX_CHANNEL);
+    }
     rmtRxInitialized = false;
     rmtRxRingBuf = NULL;
     initRmtRx();
@@ -750,13 +753,16 @@ static void drawReplayUI() {
         uint16_t color = HALEHOUND_MAGENTA;
         // SCAN icon: HOTPINK when scanning
         if (i == 1 && autoScanEnabled) color = HALEHOUND_HOTPINK;
-        // Freq icons: dimmed when auto-scan active
-        if ((i == 2 || i == 3) && autoScanEnabled) color = HALEHOUND_GUNMETAL;
+        // Icon 2: CLEAR (bright) when signal captured, otherwise freq- (dimmed during scan)
+        if (i == 2 && signalCaptured) color = HALEHOUND_HOTPINK;
+        else if ((i == 2 || i == 3) && autoScanEnabled) color = HALEHOUND_GUNMETAL;
         // REPLAY icon: HOTPINK during TX
         if (i == 4 && transmitting) color = HALEHOUND_HOTPINK;
         // SAVE icon: HOTPINK when signal captured
         if (i == 5 && signalCaptured) color = HALEHOUND_HOTPINK;
-        tft.drawBitmap(raIconX[i], ICON_BAR_Y, raIcons[i], RA_ICON_SIZE, RA_ICON_SIZE, color);
+        const unsigned char* icon = raIcons[i];
+        if (i == 2 && signalCaptured) icon = bitmap_icon_no_signal;  // CLEAR icon
+        tft.drawBitmap(raIconX[i], ICON_BAR_Y, icon, RA_ICON_SIZE, RA_ICON_SIZE, color);
     }
     tft.drawLine(0, ICON_BAR_BOTTOM, SCREEN_WIDTH, ICON_BAR_BOTTOM, HALEHOUND_HOTPINK);
 }
@@ -1208,8 +1214,17 @@ void loop() {
                                 toggleAutoScan();
                                 updateDisplay();
                                 return;
-                            case 2: // Prev freq (only when scan OFF)
-                                if (!autoScanEnabled) { prevFrequency(); updateDisplay(); }
+                            case 2: // CLEAR signal when captured, otherwise Prev freq
+                                if (signalCaptured) {
+                                    clearSignal();
+                                    tft.fillRect(0, CAPTURE_PANEL_Y, SCREEN_WIDTH, CAPTURE_PANEL_H, HALEHOUND_BLACK);
+                                    resumeRmtRx();
+                                    epoch_sub = 0;
+                                    updateDisplay();
+                                    Serial.println("[REPLAY] Signal cleared");
+                                } else if (!autoScanEnabled) {
+                                    prevFrequency(); updateDisplay();
+                                }
                                 return;
                             case 3: // Next freq (only when scan OFF)
                                 if (!autoScanEnabled) { nextFrequency(); updateDisplay(); }

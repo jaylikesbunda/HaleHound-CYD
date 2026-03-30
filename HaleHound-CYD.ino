@@ -36,6 +36,7 @@
 // Attack modules
 #include "wifi_attacks.h"
 #include "bluetooth_attacks.h"
+#include "airoha_race.h"
 #include "subghz_attacks.h"
 #include "nrf24_attacks.h"
 #include "gps_module.h"
@@ -146,13 +147,14 @@ const unsigned char *wifi_submenu_icons[NUM_SUBMENU_ITEMS] = {
 };
 
 // Bluetooth Submenu - 8 items
-const int bluetooth_NUM_SUBMENU_ITEMS = 7;
+const int bluetooth_NUM_SUBMENU_ITEMS = 8;
 const char *bluetooth_submenu_items[bluetooth_NUM_SUBMENU_ITEMS] = {
     "BLE Jammer",
     "BLE Spoofer",
     "BLE Beacon",
     "BLE Predator",
     "WhisperPair",
+    "Airoha RACE",
     "Lunatic Fringe",
     "Back to Main Menu"
 };
@@ -163,6 +165,7 @@ const unsigned char *bluetooth_submenu_icons[bluetooth_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_signal,
     bitmap_icon_analyzer,       // BLE Predator - analyzer icon
     bitmap_icon_eye,
+    bitmap_icon_key,            // Airoha RACE - key extraction
     bitmap_icon_scanner,        // Lunatic Fringe (hub)
     bitmap_icon_go_back
 };
@@ -936,7 +939,7 @@ void handleBluetoothSubmenuTouch() {
             displaySubmenu();
             delay(200);
 
-            if (current_submenu_index == 6) { // Back
+            if (current_submenu_index == bluetooth_NUM_SUBMENU_ITEMS - 1) { // Back
                 returnToMainMenu();
                 return;
             }
@@ -1015,7 +1018,23 @@ void handleBluetoothSubmenuTouch() {
                     }
                     WhisperPair::cleanup();
                     break;
-                case 5: // Lunatic Fringe (Hub — tracker detect + AirTag tools)
+                case 5: // Airoha RACE (CVE-2025-20700/20701/20702)
+                    if (!isOffensiveAllowed()) {
+                        if (blue_team_mode) { showBlueTeamBlockedScreen(); if (!showDisclaimerScreen()) break; }
+                        else if (!showDisclaimerScreen()) break;
+                        if (!isOffensiveAllowed()) break;
+                    }
+                    AirohaRace::setup();
+                    while (!feature_exit_requested) {
+                        AirohaRace::loop();
+                        if (AirohaRace::isExitRequested()) feature_exit_requested = true;
+                        touchButtonsUpdate();
+                        if (isBackButtonTapped()) feature_exit_requested = true;
+                        if (IS_BOOT_PRESSED()) feature_exit_requested = true;
+                    }
+                    AirohaRace::cleanup();
+                    break;
+                case 6: // Lunatic Fringe (Hub — tracker detect + AirTag tools)
                     handleLunaticFringeHubTouch();
                     break;
             }

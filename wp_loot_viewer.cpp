@@ -32,7 +32,7 @@ namespace WPLootViewer {
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-#define WL_DIR              "/wp_loot"
+static const char* WL_DIR = "/wp_loot";
 #define WL_MAX_FILES        16
 #define WL_LIST_Y           74       // Top of file list area (below title+separator)
 #define WL_LIST_BOTTOM      (SCREEN_HEIGHT - 28)
@@ -109,6 +109,24 @@ static struct {
 #define viewPage        wl.viewPage
 #define exitRequested   wl.exitRequested
 #define sdMounted       wl.sdMounted
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DIRECTORY CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+static const char* WL_TITLE = "WP LOOT";
+
+void setDirectory(const char* dir) {
+    if (dir && dir[0]) {
+        WL_DIR = dir;
+        // Set title based on directory
+        if (strcmp(dir, "/race_loot") == 0) {
+            WL_TITLE = "RACE LOOT";
+        } else {
+            WL_TITLE = "WP LOOT";
+        }
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -460,7 +478,7 @@ static void drawListHeader() {
     tft.fillScreen(TFT_BLACK);
     drawStatusBar();
     drawWLIconBar();
-    drawGlitchText(55, "WP LOOT", &Nosifer_Regular10pt7b);
+    drawGlitchText(55, WL_TITLE, &Nosifer_Regular10pt7b);
     tft.drawLine(0, 58, tft.width(), 58, HALEHOUND_HOTPINK);
 
     // Column headers
@@ -548,7 +566,7 @@ static void drawEmptyScreen() {
     tft.fillScreen(TFT_BLACK);
     drawStatusBar();
     drawWLIconBar();
-    drawGlitchText(55, "WP LOOT", &Nosifer_Regular10pt7b);
+    drawGlitchText(55, WL_TITLE, &Nosifer_Regular10pt7b);
     tft.drawLine(0, 58, tft.width(), 58, HALEHOUND_HOTPINK);
 
     drawGlitchStatus(120, "NO FILES", HALEHOUND_HOTPINK);

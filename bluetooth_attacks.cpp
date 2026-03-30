@@ -8661,6 +8661,7 @@ void loop() {
                 else if (tx >= 96 && tx < 144) {
                     // Loot viewer icon — accessible from device list and attack result
                     if (!inAttack && (!inResult || inAttackResult)) {
+                        WPLootViewer::setDirectory("/wp_loot");
                         inLootViewer = true;
                         WPLootViewer::setup();
                         lastTap = millis();

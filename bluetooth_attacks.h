@@ -177,6 +177,21 @@ void cleanup();
 }  // namespace WhisperPair
 
 // ═══════════════════════════════════════════════════════════════════════════
+// AIROHA RACE - CVE-2025-20700/20701/20702 Exploit Chain
+// Unauthenticated BLE GATT access to Airoha-based BT headphones
+// Link key extraction, flash dumping, BD_ADDR extraction, firmware reads
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace AirohaRace {
+
+void setup();
+void loop();
+bool isExitRequested();
+void cleanup();
+
+}  // namespace AirohaRace
+
+// ═══════════════════════════════════════════════════════════════════════════
 // AIRTAG DETECT - Apple FindMy Tracker Detection
 // Scans for AirTags, FindMy accessories, and compatible trackers
 // Detects Apple manufacturer data (0x4C) with FindMy type (0x12)

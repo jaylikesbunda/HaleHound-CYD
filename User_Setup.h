@@ -131,10 +131,10 @@
 
 // Display SPI frequency
 #ifdef CYD_28
-  #define SPI_FREQUENCY  40000000  // 40MHz — matches Bruce, works on all CYD panel variants
+  #define SPI_FREQUENCY  55000000  // 55MHz — ILI9341 handles up to 80MHz writes, 55 is safe
 #endif
 #ifdef CYD_35
-  #define SPI_FREQUENCY  40000000  // 40MHz for ST7796 (more conservative)
+  #define SPI_FREQUENCY  55000000  // 55MHz for ST7796
 #endif
 
 // Touch SPI frequency (XPT2046 requires slower speed)

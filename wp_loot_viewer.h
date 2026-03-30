@@ -15,6 +15,10 @@
 
 namespace WPLootViewer {
 
+// Set the loot directory to browse (must be called BEFORE setup)
+// Default is "/wp_loot" if not called
+void setDirectory(const char* dir);
+
 // Initialize — mount SD, scan directory, draw list
 void setup();
 

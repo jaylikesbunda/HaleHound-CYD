@@ -245,7 +245,7 @@ static bool nrfInit() {
         if (status != 0x00 && status != 0xFF) {
             found = true;
             // Bump to full speed now that we know the chip is alive
-            SPI.setFrequency(8000000);
+            SPI.setFrequency(10000000);
             break;
         }
     }

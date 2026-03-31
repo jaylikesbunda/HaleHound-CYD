@@ -20,6 +20,9 @@ findyou_keys.json
 .DS_Store
 Thumbs.db
 
+# Build artifacts
+compile_commands.json
+
 # IDE files
 *.swp
 *.swo

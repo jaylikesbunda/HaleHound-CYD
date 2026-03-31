@@ -51,6 +51,7 @@
 #include "loot_manager.h"
 #include "rfid_attacks.h"
 #include "jam_detect.h"
+#include "subread.h"
 #if __has_include("battery_monitor.h")
   #include "battery_monitor.h"
 #else
@@ -210,8 +211,8 @@ const unsigned char *nrf_submenu_icons[nrf_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_go_back
 };
 
-// SubGHz Submenu - 7 items
-const int subghz_NUM_SUBMENU_ITEMS = 7;
+// SubGHz Submenu - 8 items
+const int subghz_NUM_SUBMENU_ITEMS = 8;
 const char *subghz_submenu_items[subghz_NUM_SUBMENU_ITEMS] = {
     "Replay Attack",
     "Brute Force",
@@ -219,6 +220,7 @@ const char *subghz_submenu_items[subghz_NUM_SUBMENU_ITEMS] = {
     "Spectrum Analyzer",
     "Saved Profile",
     "Tesla Charge",
+    ".Sub Read",
     "Back to Main Menu"
 };
 
@@ -229,6 +231,7 @@ const unsigned char *subghz_submenu_icons[subghz_NUM_SUBMENU_ITEMS] = {
     bitmap_icon_analyzer,
     bitmap_icon_list,
     bitmap_icon_flash,
+    bitmap_icon_signal,
     bitmap_icon_go_back
 };
 
@@ -1303,7 +1306,7 @@ void handleSubGHzSubmenuTouch() {
             displaySubmenu();
             delay(200);
 
-            if (current_submenu_index == 6) { // Back
+            if (current_submenu_index == 7) { // Back
                 returnToMainMenu();
                 return;
             }
@@ -1389,6 +1392,19 @@ void handleSubGHzSubmenuTouch() {
                         if (isBackButtonTapped()) feature_exit_requested = true;
                     }
                     TeslaCharge::cleanup();
+                    break;
+                case 6: // .Sub Read
+                    if (!isOffensiveAllowed()) {
+                        if (blue_team_mode) { showBlueTeamBlockedScreen(); if (!showDisclaimerScreen()) break; }
+                        else if (!showDisclaimerScreen()) break;
+                        if (!isOffensiveAllowed()) break;
+                    }
+                    SubRead::setup();
+                    while (!feature_exit_requested) {
+                        SubRead::loop();
+                        if (SubRead::isExitRequested()) feature_exit_requested = true;
+                    }
+                    SubRead::cleanup();
                     break;
             }
 

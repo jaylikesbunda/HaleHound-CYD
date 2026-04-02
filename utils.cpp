@@ -342,7 +342,9 @@ String getElapsedTimeString(uint32_t startMillis) {
 // EEPROM / STORAGE HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-#define EEPROM_SIZE 512
+// EEPROM_SIZE: Use unified HALEHOUND_EEPROM_SIZE from cyd_config.h
+// Was 512 — caused NVS blob truncation that destroyed SubGHz profiles and WiFi portal data
+#define EEPROM_SIZE HALEHOUND_EEPROM_SIZE
 #define EEPROM_MAGIC 0xCD09   // Bumped from 0xCD08 — added VALHALLA protocol + disclaimer
 
 // Globals defined in HaleHound-CYD.ino

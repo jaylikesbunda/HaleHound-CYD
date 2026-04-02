@@ -5293,22 +5293,21 @@ namespace CaptivePortal {
 #include "portal_pages.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
-// EEPROM LAYOUT
-// Addr 0-31:    SSID (32 bytes)
-// Addr 32:      Template index (1 byte)
-// Addr 33:      Credential count (1 byte)
-// Addr 34-1313: Credentials (20 * 64 bytes)
+// EEPROM LAYOUT — See cyd_config.h for the full address map
+// Portal data at addr 3500+ (was 512, before that was 0 — both collided)
 // ═══════════════════════════════════════════════════════════════════════════
 
-// EEPROM LAYOUT — Portal data starts at offset 512 to avoid collision
-// with Settings struct (utils.cpp saves brightness, touch cal, etc at addr 0-23)
-#define CP_EEPROM_SIZE 1832    // 512 (settings reserved) + 1320 (portal data)
-#define SSID_ADDR 512          // was 0 — COLLIDED with Settings magic!
-#define TMPL_ADDR 544          // was 32
-#define COUNT_ADDR 545         // was 33
-#define CRED_ADDR 546          // was 34
-#define MAX_CREDS 20
-#define CRED_SIZE 64
+// EEPROM LAYOUT — Portal data starts at offset 3500 to avoid collision
+// with Settings (addr 0-95) and SubGHz profiles (addr 100-3443).
+// ALL addresses defined in cyd_config.h — single source of truth.
+// Was at 512 which COLLIDED with SubGHz profile rawItems.
+#define CP_EEPROM_SIZE HALEHOUND_EEPROM_SIZE
+#define SSID_ADDR  HH_EEPROM_CP_SSID
+#define TMPL_ADDR  HH_EEPROM_CP_TMPL
+#define COUNT_ADDR HH_EEPROM_CP_COUNT
+#define CRED_ADDR  HH_EEPROM_CP_CREDS
+#define MAX_CREDS  HH_EEPROM_CP_MAX_CREDS
+#define CRED_SIZE  HH_EEPROM_CP_CRED_SIZE
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STATE VARIABLES

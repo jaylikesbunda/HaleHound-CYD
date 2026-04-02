@@ -768,6 +768,40 @@
 #define CYD_DEBUG_BAUD 115200
 
 // ═══════════════════════════════════════════════════════════════════════════
+// EEPROM ADDRESS MAP — ALL modules MUST use HALEHOUND_EEPROM_SIZE
+// ═══════════════════════════════════════════════════════════════════════════
+// CRITICAL: Every EEPROM.begin() call in the firmware MUST use the same size.
+// Calling EEPROM.begin(smaller) + commit() TRUNCATES the NVS blob, destroying
+// all data above 'smaller'. This killed SubGHz profiles when Settings saved
+// with begin(512) and WiFi portal saved with begin(1832).
+//
+// Addr 0-95:       Settings struct (utils.cpp — magic, brightness, touch cal, PIN, etc.)
+// Addr 96:         SubGHz profile count (1 byte)
+// Addr 100-3443:   SubGHz signal profiles (4 × 836 bytes)
+// Addr 3500-3531:  WiFi Captive Portal SSID (32 bytes)
+// Addr 3532:       WiFi Captive Portal template index (1 byte)
+// Addr 3533:       WiFi Captive Portal credential count (1 byte)
+// Addr 3534-4813:  WiFi Captive Portal credentials (20 × 64 bytes)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#define HALEHOUND_EEPROM_SIZE       5120
+
+// Settings (utils.cpp)
+#define HH_EEPROM_SETTINGS_ADDR     0
+
+// SubGHz signal profiles (subghz_attacks.cpp)
+#define HH_EEPROM_PROFILE_COUNT     96
+#define HH_EEPROM_PROFILE_START     100
+
+// WiFi Captive Portal (wifi_attacks.cpp)
+#define HH_EEPROM_CP_SSID           3500
+#define HH_EEPROM_CP_TMPL           3532
+#define HH_EEPROM_CP_COUNT          3533
+#define HH_EEPROM_CP_CREDS          3534
+#define HH_EEPROM_CP_CRED_SIZE      64
+#define HH_EEPROM_CP_MAX_CREDS      20
+
+// ═══════════════════════════════════════════════════════════════════════════
 // VALIDATION
 // ═══════════════════════════════════════════════════════════════════════════
 

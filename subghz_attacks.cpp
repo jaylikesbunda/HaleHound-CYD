@@ -316,10 +316,11 @@ static const int raKbKeyW = SCALE_W(22);
 static const int raKbKeyH = SCALE_H(18);
 static const int raKbKeySp = 2;
 
-// Profiles
-#define EEPROM_SIZE 4096  // Expanded for raw capture profiles (~836 bytes each)
-#define EEPROM_PROFILE_START 100
-#define EEPROM_PROFILE_COUNT_ADDR 96   // was 0 — COLLIDED with Settings magic at addr 0!
+// Profiles — addresses defined in cyd_config.h (single source of truth)
+// Was 4096 local, now uses HALEHOUND_EEPROM_SIZE (5120) shared by all modules
+#define EEPROM_SIZE HALEHOUND_EEPROM_SIZE
+#define EEPROM_PROFILE_START HH_EEPROM_PROFILE_START
+#define EEPROM_PROFILE_COUNT_ADDR HH_EEPROM_PROFILE_COUNT
 static int profileCount = 0;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1923,24 +1924,37 @@ static void drawProfileMenu() {
         if (i < profileCount) {
             SignalProfile* p = getProfile(i);
             if (p) {
+                // Safety: force null-terminate name (EEPROM corruption can leave garbage)
+                p->name[15] = '\0';
+
+                // Validate profile data — frequency 0 or 0xFFFFFFFF = corrupted EEPROM
+                bool corrupt = (p->frequency == 0 || p->frequency == 0xFFFFFFFF
+                                || p->name[0] == '\0' || p->name[0] == (char)0xFF);
+
                 // Slot number + name
                 tft.setTextColor(HALEHOUND_BRIGHT);
                 tft.setCursor(SCALE_X(15), rowY + 4);
                 tft.print(i + 1);
                 tft.print(". ");
-                tft.setTextColor(HALEHOUND_CYAN);
-                tft.print(p->name);
 
-                // [RAW] tag for raw captures
-                if (p->isRaw) {
-                    tft.setTextColor(HALEHOUND_HOTPINK);
-                    tft.print(" RAW");
+                if (corrupt) {
+                    tft.setTextColor(0xF800);  // Red
+                    tft.print("[CORRUPTED]");
+                } else {
+                    tft.setTextColor(HALEHOUND_CYAN);
+                    tft.print(p->name);
+
+                    // [RAW] tag for raw captures
+                    if (p->isRaw) {
+                        tft.setTextColor(HALEHOUND_HOTPINK);
+                        tft.print(" RAW");
+                    }
+
+                    // Frequency
+                    tft.setTextColor(HALEHOUND_MAGENTA);
+                    tft.print(" ");
+                    tft.print(p->frequency / 1000000.0, 2);
                 }
-
-                // Frequency
-                tft.setTextColor(HALEHOUND_MAGENTA);
-                tft.print(" ");
-                tft.print(p->frequency / 1000000.0, 2);
 
                 // Delete [X] button — red square at right edge
                 int delX = SCREEN_WIDTH - SCALE_X(25);
@@ -2219,6 +2233,13 @@ static bool showNameKeyboard(char* outputName, int maxLen) {
 }
 
 void showProfileMenu() {
+    // Stop FFT task — Core 0 SPI activity during EEPROM reads + TFT redraws
+    // causes display corruption (garbage ASCII across the screen)
+    stopFFTTask();
+
+    // Pause RMT RX so the ring buffer doesn't fill while we're in the menu
+    pauseRmtRx();
+
     // Refresh profile count from EEPROM (works whether replay module is initialized or not)
     EEPROM.begin(EEPROM_SIZE);
     int stored = EEPROM.read(EEPROM_PROFILE_COUNT_ADDR);
@@ -2334,6 +2355,9 @@ void showProfileMenu() {
                                 drawUI();
                                 updateDisplay();
                                 drawSignalCaptured();
+                                // Restart FFT + RMT that were paused on menu entry
+                                resumeRmtRx();
+                                startFFTTask();
                                 return;
                             } else {
                                 tft.fillRect(SCALE_X(35), SCALE_Y(140), SCALE_W(170), SCALE_H(20), HALEHOUND_VIOLET);
@@ -2381,6 +2405,9 @@ void showProfileMenu() {
         if (signalCaptured) {
             drawSignalCaptured();
         }
+        // Restart FFT + RMT that were paused on menu entry
+        resumeRmtRx();
+        startFFTTask();
     }
 }
 
@@ -2460,6 +2487,16 @@ bool loadProfile(int index) {
     EEPROM.get(addr, profile);
     EEPROM.end();
 
+    // Safety: null-terminate name
+    profile.name[15] = '\0';
+
+    // Reject corrupted profiles — don't load garbage into the replay state
+    if (profile.frequency == 0 || profile.frequency == 0xFFFFFFFF) {
+        Serial.printf("[SUBGHZ] Profile %d corrupt (freq=0x%08X), refusing load\n",
+                      index, profile.frequency);
+        return false;
+    }
+
     // Find matching frequency index
     for (int i = 0; i < frequencyCount; i++) {
         if (frequencyList[i] == profile.frequency) {
@@ -2536,6 +2573,9 @@ SignalProfile* getProfile(int index) {
     EEPROM.begin(EEPROM_SIZE);
     EEPROM.get(addr, profile);
     EEPROM.end();
+
+    // Safety: guarantee null-terminated name regardless of EEPROM contents
+    profile.name[15] = '\0';
 
     return &profile;
 }

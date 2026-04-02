@@ -251,6 +251,20 @@ static rmt_item32_t rawCaptureItems[RAW_CAPTURE_MAX];
 static int rawCaptureLen = 0;
 static bool isRawCapture = false;
 
+// Repeat validation — require same decoded value twice before accepting
+// Real remotes send 3-5 repetitions; noise never repeats the same decode
+static unsigned long pendingValue = 0;
+static int pendingBits = 0;
+static int pendingProto = 0;
+static unsigned long pendingTime = 0;
+
+// RSSI thresholds for capture quality gating
+// Noise floor is typically -88 to -102 dBm (confirmed via serial)
+// Real remotes at usable range are -30 to -70 dBm
+#define CAPTURE_RSSI_THRESHOLD -75   // Protocol decode: RSSI must exceed this
+#define RAW_RSSI_THRESHOLD     -65   // Raw capture: needs stronger signal (no protocol validation)
+#define PENDING_EXPIRE_MS      2000  // Discard unconfirmed pending decode after 2s
+
 // Auto-scan
 static bool autoScanEnabled = false;
 static int autoScanIndex = 0;
@@ -951,8 +965,49 @@ static int buildRMTSymbols(int protocol, unsigned long value, int bitLength) {
 // RMT RX SIGNAL DECODING (replaces RCSwitch interrupt-based detection)
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Check if raw frame has consistent pulse timing (real signal vs noise)
+// Real signals: most HIGH pulses cluster around 1-3 distinct durations
+// Noise: random durations spread across the full range
+static bool checkPulseConsistency(rmt_item32_t* items, size_t count) {
+    if (count < 20) return false;
+
+    // Collect first 20 HIGH durations
+    uint32_t highs[20];
+    int n = 0;
+    for (int i = 0; i < 20 && i < (int)count; i++) {
+        if (items[i].duration0 > 0) {
+            highs[n++] = items[i].duration0;
+        }
+    }
+    if (n < 10) return false;
+
+    // Sort to find median (simple insertion sort — only 20 elements)
+    for (int i = 1; i < n; i++) {
+        uint32_t key = highs[i];
+        int j = i - 1;
+        while (j >= 0 && highs[j] > key) { highs[j + 1] = highs[j]; j--; }
+        highs[j + 1] = key;
+    }
+
+    uint32_t median = highs[n / 2];
+    if (median == 0) return false;
+    uint32_t tolerance = median * 40 / 100;
+
+    int matching = 0;
+    for (int i = 0; i < n; i++) {
+        if (highs[i] >= median - tolerance && highs[i] <= median + tolerance) {
+            matching++;
+        }
+    }
+
+    // At least 50% of pulses must cluster near median for a real signal
+    return (matching * 100 / n) >= 50;
+}
+
 // Check if pulse duration is within tolerance of target
-static bool pulseMatch(uint32_t duration, uint32_t target, uint8_t tolerance = 60) {
+// 40% tolerance — tighter than RCSwitch's 60% because we lack sync pulse validation
+// Without sync detection, loose tolerance lets noise match as data bits
+static bool pulseMatch(uint32_t duration, uint32_t target, uint8_t tolerance = 40) {
     uint32_t tol = (target * tolerance) / 100;
     return (duration >= (target - tol) && duration <= (target + tol));
 }
@@ -1011,7 +1066,9 @@ static bool decodeRmtSignal(rmt_item32_t* items, size_t itemCount,
             }
 
             // Valid if we got enough consecutive bits
-            if (bitCount >= 8 && value != 0) {
+            // 12 minimum (was 8) — reduces noise false positives without missing real remotes
+            // Most remotes send 20-24 bits; shortest real protocol is 12 bits
+            if (bitCount >= 12 && value != 0) {
                 *outValue = value;
                 *outBitLength = bitCount;
                 *outProtocol = proto;
@@ -1330,88 +1387,104 @@ void loop() {
     }
 
     // Check for received signal via RMT hardware capture (1μs pulse resolution)
-    // RMT ring buffer collects frames when GDO0 goes idle for >5ms
-    // decodeRmtSignal() tries all 12 protocols against captured pulse timing
+    // DRAIN LOOP: Process ALL pending frames to prevent RMT RX BUFFER FULL errors
+    // OOK noise floods the ring buffer — must drain fast and discard noise frames
+    // Only accept signals that pass: RSSI gate + repeat validation (protocol) or
+    // RSSI gate + pulse consistency (raw)
     static uint32_t rmtFrameCount = 0;
     static uint32_t rmtDecodeHits = 0;
-    static uint32_t rmtBigFrames = 0;       // Frames with >= 10 items (likely signal)
-    static uint16_t lastDumpH[6] = {0};     // Last "big frame" pulse HIGH durations
-    static uint16_t lastDumpL[6] = {0};     // Last "big frame" pulse LOW durations
-    static int lastDumpItems = 0;
     if (rmtRxRingBuf) {
+        // Read RSSI once per drain cycle for quality gating
+        int currentRssi = -999;
+        if (!signalCaptured && cc1101Lock(pdMS_TO_TICKS(5))) {
+            currentRssi = ELECHOUSE_cc1101.getRssi();
+            cc1101Unlock();
+        }
+
         size_t rxSize = 0;
-        rmt_item32_t* items = (rmt_item32_t*)xRingbufferReceive(rmtRxRingBuf, &rxSize, 0);
-        if (items && rxSize > 0) {
+        rmt_item32_t* items;
+        int drainCount = 0;
+        const int MAX_DRAIN = 30;  // Cap per loop() to avoid starving UI/touch
+
+        while (drainCount < MAX_DRAIN &&
+               (items = (rmt_item32_t*)xRingbufferReceive(rmtRxRingBuf, &rxSize, 0)) != NULL) {
+            drainCount++;
             size_t numItems = rxSize / sizeof(rmt_item32_t);
             rmtFrameCount++;
 
-            // Dump pulse timing for frames with >= 10 items (likely real signal, not noise)
-            if (numItems >= 10) {
-                rmtBigFrames++;
-                lastDumpItems = (int)numItems;
-                // Save first 6 items for on-screen display
-                for (int d = 0; d < 6 && d < (int)numItems; d++) {
-                    lastDumpH[d] = items[d].duration0;
-                    lastDumpL[d] = items[d].duration1;
-                }
-                // Serial dump first 20 items
-                Serial.printf("[RMT-FRAME] %d items: ", (int)numItems);
-                for (int d = 0; d < 20 && d < (int)numItems; d++) {
-                    Serial.printf("%u/%u ", items[d].duration0, items[d].duration1);
-                }
-                Serial.println();
+            // Fast discard: tiny frames or weak RSSI = noise, skip immediately
+            if (numItems < 8 || signalCaptured || currentRssi < CAPTURE_RSSI_THRESHOLD) {
+                vRingbufferReturnItem(rmtRxRingBuf, (void*)items);
+                continue;
             }
 
+            // Try protocol decode
             unsigned long val = 0;
             int bits = 0, proto = 0;
-            if (numItems >= 8 && decodeRmtSignal(items, numItems, &val, &bits, &proto)) {
-                if (val != 0) {
+            if (decodeRmtSignal(items, numItems, &val, &bits, &proto) && val != 0) {
+                // Repeat validation — must see same value+protocol twice
+                // Real remotes send 3-5 repetitions; noise never decodes the same way twice
+                if (val == pendingValue && proto == pendingProto) {
+                    // CONFIRMED — same decode seen twice
                     rmtDecodeHits++;
                     capturedValue = val;
                     capturedBitLength = bits;
                     capturedProtocol = proto;
                     signalCaptured = true;
+                    pendingValue = 0;
+                    pendingProto = 0;
+                    pendingTime = 0;
 
-                    Serial.printf("[RMT-DECODE] val=%lu bits=%d proto=%d freq=%.3fMHz items=%d\n",
-                                  val, bits, proto, frequencyList[currentFreqIndex] / 1000000.0, (int)numItems);
+                    Serial.printf("[RMT-DECODE] CONFIRMED val=%lu bits=%d proto=%d freq=%.3fMHz rssi=%d\n",
+                                  val, bits, proto, frequencyList[currentFreqIndex] / 1000000.0, currentRssi);
 
-                    // If auto-scanning, save the frequency where signal was found
                     if (autoScanEnabled) {
                         currentFreqIndex = autoScanIndex;
                     }
-
                     drawSignalCaptured();
+                    vRingbufferReturnItem(rmtRxRingBuf, (void*)items);
+                    break;  // Got confirmed signal, stop draining
+                } else {
+                    // First match — store as pending, wait for repeat confirmation
+                    pendingValue = val;
+                    pendingBits = bits;
+                    pendingProto = proto;
+                    pendingTime = millis();
+                    Serial.printf("[RMT-PENDING] val=%lu bits=%d proto=%d (awaiting repeat)\n",
+                                  val, bits, proto);
                 }
             }
-            // Raw capture fallback — signal doesn't match any known protocol
-            // Captures exact pulse timing for raw replay (works with ANY fixed-code remote)
-            // Jesse's remote: pulse-width encoding ~445/155μs HIGH + ~100μs LOW gap
-            else if (numItems >= 20 && !signalCaptured) {
-                int copyLen = ((int)numItems > RAW_CAPTURE_MAX) ? RAW_CAPTURE_MAX : (int)numItems;
-                memcpy(rawCaptureItems, items, copyLen * sizeof(rmt_item32_t));
-                rawCaptureLen = copyLen;
-                isRawCapture = true;
-                signalCaptured = true;
-                capturedValue = 0;
-                capturedBitLength = copyLen;   // Store item count in bitLength field
-                capturedProtocol = 0;          // Raw = no protocol
+            // Raw capture fallback — needs STRONG RSSI + pulse consistency check
+            else if (numItems >= 30 && !signalCaptured && currentRssi > RAW_RSSI_THRESHOLD) {
+                if (checkPulseConsistency(items, numItems)) {
+                    int copyLen = ((int)numItems > RAW_CAPTURE_MAX) ? RAW_CAPTURE_MAX : (int)numItems;
+                    memcpy(rawCaptureItems, items, copyLen * sizeof(rmt_item32_t));
+                    rawCaptureLen = copyLen;
+                    isRawCapture = true;
+                    signalCaptured = true;
+                    capturedValue = 0;
+                    capturedBitLength = copyLen;
+                    capturedProtocol = 0;
 
-                Serial.printf("[RAW-CAPTURE] %d items stored from %d-item frame at %.3fMHz\n",
-                              copyLen, (int)numItems, frequencyList[currentFreqIndex] / 1000000.0);
-                // Dump first 10 items for verification
-                Serial.printf("[RAW-CAPTURE] Pulses: ");
-                for (int d = 0; d < 10 && d < copyLen; d++) {
-                    Serial.printf("%u/%u ", rawCaptureItems[d].duration0, rawCaptureItems[d].duration1);
+                    Serial.printf("[RAW-CAPTURE] %d items at %.3fMHz rssi=%d (consistency OK)\n",
+                                  copyLen, frequencyList[currentFreqIndex] / 1000000.0, currentRssi);
+
+                    if (autoScanEnabled) {
+                        currentFreqIndex = autoScanIndex;
+                    }
+                    drawSignalCaptured();
+                    vRingbufferReturnItem(rmtRxRingBuf, (void*)items);
+                    break;
                 }
-                Serial.println();
-
-                if (autoScanEnabled) {
-                    currentFreqIndex = autoScanIndex;
-                }
-
-                drawSignalCaptured();
             }
             vRingbufferReturnItem(rmtRxRingBuf, (void*)items);
+        }
+
+        // Expire unconfirmed pending decode after timeout
+        if (pendingValue != 0 && millis() - pendingTime > PENDING_EXPIRE_MS) {
+            pendingValue = 0;
+            pendingProto = 0;
+            pendingTime = 0;
         }
     }
 
@@ -1578,6 +1651,11 @@ void clearSignal() {
     capturedProtocol = 0;
     isRawCapture = false;
     rawCaptureLen = 0;
+    // Reset repeat validation state so noise doesn't carry over
+    pendingValue = 0;
+    pendingProto = 0;
+    pendingBits = 0;
+    pendingTime = 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3867,8 +3945,8 @@ void loop() {
                 waitForTouchRelease();
             }
         }
-        // Center screen tap = toggle attack
-        if (ty > 60 && ty < 160) {
+        // Center screen tap = toggle attack (scaled for 2.8" and 3.5")
+        if (ty > CONTENT_Y_START && ty < SCALE_Y(195)) {
             if (running) {
                 stopAttack();
             } else {

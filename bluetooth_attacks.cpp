@@ -5477,6 +5477,7 @@ static void bjJamTask(void* param) {
     // Init radio on THIS core
     if (!nrf24Radio.begin()) {
         Serial.println("[BLEJAM] Core 0: NRF24 begin() FAILED");
+        SPI.end();
         bjJamTaskDone = true;
         vTaskDelete(NULL);
         return;

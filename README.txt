@@ -44,7 +44,7 @@
 
 **ESP32-DIV HaleHound Edition for Cheap Yellow Display**
 
-Version **v3.5.1 CYD Edition** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
+Version **v3.5.5 CYD Edition** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
 
 ---
 
@@ -253,7 +253,7 @@ The MicroSD slot is **built into the CYD board** on the back. No external wiring
 ## Menu Tree
 
 ```
-HALEHOUND-CYD v3.5.1
+HALEHOUND-CYD v3.5.5
 │
 ├── WiFi ──────────────────────────────────────────────────
 │   ├── Packet Monitor ......... Real-time 802.11 frame capture

@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // HaleHound-CYD Main Firmware
 // ESP32 Cheap Yellow Display Edition
-// v3.5.1 — Fix CYD35C pin mapping: CC1101_CS=26, NRF24_CSN=21 (issue #5)
+// v3.5.5 — README overhaul, Proto Kill GFSK noise, Airoha RACE, .Sub Read, Tesla Charge, battery monitor
 // Created: 2026-02-06
 // ═══════════════════════════════════════════════════════════════════════════
 //

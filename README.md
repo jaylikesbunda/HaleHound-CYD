@@ -29,7 +29,7 @@
 
 **Multi-protocol offensive security toolkit for the ESP32 Cheap Yellow Display**
 
-Version **v3.5.1** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
+Version **v3.5.5** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound.com](https://halehound.com)
 
 ---
 
@@ -45,7 +45,6 @@ Version **v3.5.1** | By [JesseCHale](https://github.com/JesseCHale) | [HaleHound
 |-------|-------------|---------|-------|--------|
 | ESP32-2432S028 (2.8") | `esp32-cyd` | ILI9341 240x320 | XPT2046 Resistive | Fully Tested |
 | QDtech E32R35T (3.5") | `esp32-e32r35t` | ST7796 320x480 | XPT2046 Resistive | Fully Tested |
-| ESP32-3248S035C (3.5") | `esp32-cyd35c` | ST7796 320x480 | GT911 Capacitive | Fully Tested |
 | QDtech E32R28T (2.8") | `esp32-e32r28t` | ILI9341 240x320 | XPT2046 Resistive | Fully Tested |
 | NM-RF-Hat (2.8") | `esp32-cyd-hat` | ILI9341 240x320 | XPT2046 Resistive | Supported |
 
@@ -92,7 +91,7 @@ The signal wires (SPI, CS, CE, GDO0, GDO2, TX_EN, RX_EN) still connect directly 
 ## Menu Tree
 
 ```
-HALEHOUND-CYD v3.5.1
+HALEHOUND-CYD v3.5.5
 │
 ├── WiFi
 │   ├── Packet Monitor         Real-time 802.11 frame capture + graph
@@ -331,7 +330,6 @@ CYD boards use CH340 USB serial. Install if your computer doesn't see the board:
 
 pio run -e esp32-cyd --target upload          # 2.8" CYD
 pio run -e esp32-e32r35t --target upload      # E32R35T 3.5"
-pio run -e esp32-cyd35c --target upload       # CYD35C 3.5" capacitive
 pio run -e esp32-e32r28t --target upload      # E32R28T
 pio run -e esp32-cyd-hat --target upload      # NM-RF-Hat
 

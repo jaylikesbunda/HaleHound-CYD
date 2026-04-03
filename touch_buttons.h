@@ -15,9 +15,6 @@
 #ifndef CYD_35
   #include "CYD28_TouchscreenR.h"
 #endif
-#ifdef CYD_CAP_TOUCH
-  #include "TAMC_GT911.h"
-#endif
 #include <TFT_eSPI.h>
 #include "cyd_config.h"
 
@@ -162,7 +159,7 @@ void clearButtonEvents();
 // Call manually when acting on raw getTouchPoint() data
 void consumeTouch();
 
-// Block until finger physically lifts off screen (direct GT911 hardware read)
+// Block until finger physically lifts off screen (direct hardware read)
 void waitForTouchRelease();
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -190,7 +187,7 @@ bool isTouched();
 bool isStillTouched();
 
 // Get raw touch coordinates (returns false if not touched)
-// Edge-triggered on GT911: returns true ONCE per finger-down, then suppresses until lift.
+// Edge-triggered: returns true ONCE per finger-down, then suppresses until lift.
 bool getTouchPoint(uint16_t *x, uint16_t *y);
 
 // Peek at touch coordinates WITHOUT consuming (no edge-trigger).

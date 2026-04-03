@@ -22,16 +22,6 @@
   #endif
 #endif
 
-// ESP32-3248S035C inherits CYD_35 (same ST7796 display)
-#ifdef CYD_3248S035C
-  #ifndef CYD_35
-    #define CYD_35
-  #endif
-  #ifndef CYD_CAP_TOUCH
-    #define CYD_CAP_TOUCH
-  #endif
-#endif
-
 #if !defined(CYD_28) && !defined(CYD_35)
   #define CYD_28    // Default: ESP32-2432S028 - 2.8" 320x240 ILI9341
 #endif
@@ -91,10 +81,7 @@
 // Touch chip select — XPT2046 on resistive touch boards only
 // CYD 2.8": separate SPI bus (bit-banged)
 // E32R35T 3.5": shared HSPI with LCD (TFT_eSPI built-in driver)
-// CYD35C 3.5": GT911 capacitive touch (I2C) — GPIO 33 is GT911 SDA, NOT XPT2046 CS
-#ifndef CYD_CAP_TOUCH
-  #define TOUCH_CS 33
-#endif
+#define TOUCH_CS 33
 
 #ifdef CYD_28
   // 2.8" has DEDICATED touch SPI bus (separate from display)

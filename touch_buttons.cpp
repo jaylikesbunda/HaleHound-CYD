@@ -13,13 +13,8 @@
 #ifndef CYD_35
   #include "CYD28_TouchscreenR.h"
 #endif
-#ifdef CYD_CAP_TOUCH
-  #include "TAMC_GT911.h"
-#endif
 #ifdef CYD_35
-  #ifndef CYD_CAP_TOUCH
-    #include <Preferences.h>
-  #endif
+  #include <Preferences.h>
 #endif
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -28,102 +23,6 @@
 
 #ifdef CYD_35
 
-#ifdef CYD_CAP_TOUCH
-// ═══ ESP32-3248S035C: GT911 CAPACITIVE TOUCH (I2C) ══════════════════════
-// No calibration needed — capacitive touch reports screen coordinates directly.
-// GT911 SDA=33, SCL=32, INT=0xFF (not connected), RST=25
-// ═════════════════════════════════════════════════════════════════════════════
-
-static TAMC_GT911 gt911(GT911_SDA, GT911_SCL, GT911_INT, GT911_RST,
-                        CYD_SCREEN_WIDTH, CYD_SCREEN_HEIGHT);
-static bool _touchFired = false;
-
-static uint16_t _cacheTX = 0, _cacheTY = 0;
-static bool     _cacheValid = false;
-static uint32_t _cacheTime  = 0;
-
-// Cap touch debounce: require 2 consecutive reads to accept initial contact,
-// then ignore new touches for 150ms after finger lifts (prevents bounce
-// during release that resistive XPT2046 naturally avoids via pressure).
-static uint8_t  _gt911HitCount = 0;
-static const uint8_t  GT911_MIN_HITS = 2;
-static bool     _gt911WasTouched = false;
-static uint32_t _gt911ReleaseTime = 0;
-static const uint32_t GT911_RELEASE_COOLDOWN_MS = 150;
-
-// Single fast read: I2C poll → return first touch point
-static bool _fastReadTouch(uint16_t *x, uint16_t *y) {
-    gt911.read();
-    if (!gt911.isTouched || gt911.touches == 0) {
-        if (_gt911WasTouched) {
-            // Finger just lifted — start release cooldown
-            _gt911ReleaseTime = millis();
-            _gt911WasTouched = false;
-        }
-        _gt911HitCount = 0;
-        return false;
-    }
-
-    // Reject touches during release cooldown (prevents bounce)
-    if (!_gt911WasTouched && millis() - _gt911ReleaseTime < GT911_RELEASE_COOLDOWN_MS) {
-        _gt911HitCount = 0;
-        return false;
-    }
-
-    if (_gt911HitCount < GT911_MIN_HITS) {
-        _gt911HitCount++;
-        return false;  // Not enough consecutive reads yet
-    }
-
-    _gt911WasTouched = true;
-
-    // Clamp to valid screen range
-    uint16_t px = constrain(gt911.points[0].x, 0, CYD_SCREEN_WIDTH - 1);
-    uint16_t py = constrain(gt911.points[0].y, 0, CYD_SCREEN_HEIGHT - 1);
-
-    *x = px;
-    *y = py;
-    return true;
-}
-
-// Cached touch read — refreshes every 5ms, all callers share same result
-// Edge-triggered: after consumeTouch(), returns false until finger lifts
-static bool _getCachedTouch(uint16_t *x, uint16_t *y) {
-    uint32_t now = millis();
-    if (now - _cacheTime >= 5) {
-        _cacheTime = now;
-        _cacheValid = _fastReadTouch(&_cacheTX, &_cacheTY);
-        // Reset edge-trigger when finger lifts
-        if (!_cacheValid) _touchFired = false;
-    }
-    // Suppress reads after consumeTouch() until finger lifts
-    if (_touchFired) return false;
-    if (_cacheValid) {
-        *x = _cacheTX;
-        *y = _cacheTY;
-    }
-    return _cacheValid;
-}
-
-void consumeTouch() {
-    _touchFired = true;
-}
-
-// Block until finger lifts off GT911
-void waitForTouchRelease() {
-    delay(10);
-    uint32_t lastSeen = millis();
-    while (millis() - lastSeen < 50) {
-        gt911.read();
-        if (gt911.isTouched) lastSeen = millis();
-        delay(5);
-    }
-    _touchFired = false;
-    _cacheValid = false;
-    _cacheTime  = 0;
-}
-
-#else
 // ═══ E32R35T: XPT2046 RESISTIVE TOUCH (TFT_eSPI shared HSPI) ═══════════
 // Touch shares HSPI with LCD — managed by TFT_eSPI via TOUCH_CS define
 // Calibration data stored in NVS (Preferences)
@@ -199,7 +98,6 @@ void waitForTouchRelease() {
     _cacheValid = false;  // Invalidate cache after release
     _cacheTime  = 0;
 }
-#endif // CYD_CAP_TOUCH
 #else
 // CYD28 resistive touch (software SPI) — needs calibration
 // Uses software SPI when begin() is called without SPI parameter
@@ -262,17 +160,6 @@ int touchMapY(CYD28_TS_Point &p) {
     return constrain(val, 0, maxY);
 }
 #else // CYD_35
-
-#ifdef CYD_CAP_TOUCH
-// GT911 capacitive touch — no calibration needed, stubs for EEPROM compatibility
-uint8_t touch_cal_x_source = 0;
-uint16_t touch_cal_x_min = 0;
-uint16_t touch_cal_x_max = CYD_SCREEN_WIDTH;
-uint8_t touch_cal_y_source = 0;
-uint16_t touch_cal_y_min = 0;
-uint16_t touch_cal_y_max = CYD_SCREEN_HEIGHT;
-bool touch_calibrated = true;          // Cap touch needs no calibration
-#else
 // E32R35T: TFT_eSPI handles calibration via calData[5] — stubs for EEPROM compatibility
 uint8_t touch_cal_x_source = 0;
 uint16_t touch_cal_x_min = 0;
@@ -303,7 +190,6 @@ static void saveTouchCalToNVS() {
     prefs.putBytes("calData", tftCalData, sizeof(tftCalData));
     prefs.end();
 }
-#endif // CYD_CAP_TOUCH
 #endif // CYD_35
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -339,17 +225,6 @@ void touchButtonsSetup() {
     pinMode(BOOT_BUTTON, INPUT_PULLUP);
 
 #ifdef CYD_35
-  #ifdef CYD_CAP_TOUCH
-    // ESP32-3248S035C: GT911 capacitive touch via I2C
-    gt911.begin(GT911_ADDR1);
-    gt911.setRotation(ROTATION_INVERTED);  // No transform — GT911 native coords match display
-    touch_calibrated = true;
-
-    #if CYD_DEBUG
-    Serial.println("[TOUCH] GT911 capacitive touch init (I2C SDA=33 SCL=32 RST=25)");
-    Serial.flush();
-    #endif
-  #else
     // E32R35T: XPT2046 resistive touch via TFT_eSPI built-in driver
     // Touch shares HSPI with LCD — TFT_eSPI handles CS toggling via TOUCH_CS
     #if CYD_DEBUG
@@ -380,7 +255,6 @@ void touchButtonsSetup() {
     #if CYD_DEBUG
     Serial.println("[TOUCH] XPT2046 resistive touch initialized (TFT_eSPI)");
     #endif
-  #endif // CYD_CAP_TOUCH
 #else
     // XPT2046 resistive touch — SOFTWARE BIT-BANGED SPI
     // Calling begin() without SPI parameter = software SPI mode
@@ -440,34 +314,6 @@ void runTouchTest() {
         tft.fillRect(0, 0, sw, 55, TFT_BLACK);
 
 #ifdef CYD_35
-  #ifdef CYD_CAP_TOUCH
-        gt911.read();
-        tft.setTextSize(1);
-        tft.setTextColor(TFT_YELLOW);
-        tft.setCursor(5, 5);
-
-        if (gt911.isTouched && gt911.touches > 0) {
-            int screenX = constrain((int)gt911.points[0].x, 0, sw - 1);
-            int screenY = constrain((int)gt911.points[0].y, 0, sh - 1);
-
-            tft.printf("GT911 X:%3d Y:%3d T:%d", screenX, screenY, gt911.touches);
-
-            tft.setTextColor(TFT_GREEN);
-            tft.setCursor(5, 18);
-            tft.printf("SCREEN X:%3d Y:%3d", screenX, screenY);
-
-            tft.setCursor(5, 35);
-            tft.setTextColor(TFT_MAGENTA);
-            tft.print("TOUCHED! Drawing dot...");
-
-            tft.fillCircle(screenX, screenY, 4, TFT_MAGENTA);
-        } else {
-            tft.printf("GT911 — no touch");
-            tft.setTextColor(TFT_RED);
-            tft.setCursor(5, 18);
-            tft.print("NO TOUCH - tap screen");
-        }
-  #else
         uint16_t tx, ty;
         bool touched = tft.getTouch(&tx, &ty, TFT_TOUCH_THRESHOLD);
         tft.setTextSize(1);
@@ -495,7 +341,6 @@ void runTouchTest() {
             tft.setCursor(5, 18);
             tft.print("NO TOUCH - tap screen");
         }
-  #endif // CYD_CAP_TOUCH
 #else
         CYD28_TS_Point p = touch.getPointRaw();
 
@@ -564,13 +409,8 @@ bool isTouched() {
 // Use ONLY for long-press detection loops.
 bool isStillTouched() {
 #ifdef CYD_35
-  #ifdef CYD_CAP_TOUCH
-    gt911.read();
-    return gt911.isTouched;
-  #else
     // Direct Z read — no cache, need real-time pressure for hold detection
     return tft.getTouchRawZ() >= TFT_TOUCH_THRESHOLD;
-  #endif
 #else
     return touch.touched();
 #endif
@@ -1114,30 +954,6 @@ extern void saveSettings();
 
 void runTouchCalibration() {
 #ifdef CYD_35
-  #ifdef CYD_CAP_TOUCH
-    // GT911 capacitive touch — no calibration needed
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_GREEN);
-    tft.setTextSize(2);
-    tft.setCursor(20, CYD_SCREEN_HEIGHT / 2 - 20);
-    tft.println("CAPACITIVE TOUCH");
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_WHITE);
-    tft.setCursor(20, CYD_SCREEN_HEIGHT / 2 + 10);
-    tft.println("No calibration needed.");
-    tft.setCursor(20, CYD_SCREEN_HEIGHT / 2 + 30);
-    tft.println("Tap to continue.");
-    delay(500);
-    // Wait for tap to dismiss
-    while (true) {
-        gt911.read();
-        if (gt911.isTouched) break;
-        if (IS_BOOT_PRESSED()) break;
-        delay(10);
-    }
-    waitForTouchRelease();
-    tft.fillScreen(TFT_BLACK);
-  #else
     // E32R35T: XPT2046 resistive touch — use TFT_eSPI built-in calibration
     // Draws 4 corner crosshairs, user taps each one, computes mapping
     tft.fillScreen(TFT_BLACK);
@@ -1174,7 +990,6 @@ void runTouchCalibration() {
     while (!tft.getTouch(&tx, &ty, TFT_TOUCH_THRESHOLD)) delay(10);
     waitForTouchRelease();
     tft.fillScreen(TFT_BLACK);
-  #endif // CYD_CAP_TOUCH
 #else
     // 4-corner calibration — captures raw values, computes mapping, saves to EEPROM
     tft.fillScreen(TFT_BLACK);
@@ -1477,28 +1292,13 @@ void printTouchDebug() {
     #if CYD_DEBUG
     Serial.println("═══════════════════════════════════════");
 #ifdef CYD_35
-  #ifdef CYD_CAP_TOUCH
-    Serial.println("         TOUCH DEBUG (GT911 I2C)");
-  #else
     Serial.println("         TOUCH DEBUG (XPT2046 TFT_eSPI)");
-  #endif
 #else
     Serial.println("         TOUCH DEBUG (XPT2046)");
 #endif
     Serial.println("═══════════════════════════════════════");
 
 #ifdef CYD_35
-  #ifdef CYD_CAP_TOUCH
-    gt911.read();
-    bool touched = gt911.isTouched;
-    Serial.println("Touched:    " + String(touched ? "YES" : "NO"));
-    if (touched && gt911.touches > 0) {
-        Serial.println("X:          " + String(gt911.points[0].x));
-        Serial.println("Y:          " + String(gt911.points[0].y));
-        Serial.println("Touches:    " + String(gt911.touches));
-        Serial.println("Zone:       " + getButtonName(getTouchZone(gt911.points[0].x, gt911.points[0].y)));
-    }
-  #else
     uint16_t tx, ty;
     bool touched = tft.getTouch(&tx, &ty, TFT_TOUCH_THRESHOLD);
     Serial.println("Touched:    " + String(touched ? "YES" : "NO"));
@@ -1508,7 +1308,6 @@ void printTouchDebug() {
         Serial.println("CalLoaded:  " + String(_touchCalLoaded ? "YES" : "NO"));
         Serial.println("Zone:       " + getButtonName(getTouchZone(tx, ty)));
     }
-  #endif // CYD_CAP_TOUCH
 #else
     bool touched = touch.touched();
     Serial.println("Touched:    " + String(touched ? "YES" : "NO"));
